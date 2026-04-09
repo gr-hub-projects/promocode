@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Foto con Marco</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: rgba(15, 23, 42, 0.78);
+      --text: #ffffff;
+      --muted: rgba(255,255,255,0.75);
+      --accent: #22c55e;
+      --danger: #ef4444;
+      --shadow: 0 20px 50px rgba(0,0,0,0.28);
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overflow: hidden;
+    }
+
+    .app {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: #000;
+      overflow: hidden;
+    }
+
+    video,
+    canvas,
+    .captured-image,
+    .frame-overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    video,
+    .captured-image {
+      object-fit: cover;
+      background: #000;
+    }
+
+    .frame-overlay {
+      object-fit: contain;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .captured-image {
+      display: none;
+      z-index: 2;
+    }
+
+    .top-bar {
+      position: absolute;
+      top: max(14px, env(safe-area-inset-top));
+      left: 14px;
+      right: 14px;
+      z-index: 5;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .brand,
+    .status {
+      background: var(--panel);
+      color: var(--text);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-radius: 18px;
+      padding: 12px 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.2;
+    }
+
+    .brand p,
+    .status {
+      margin: 6px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .controls {
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: max(16px, env(safe-area-inset-bottom));
+      z-index: 6;
+      display: grid;
+      gap: 12px;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .button-row > :first-child { justify-self: start; }
+    .button-row > :nth-child(2) { justify-self: center; }
+    .button-row > :last-child { justify-self: end; }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 14px 18px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: var(--shadow);
+    }
+
+    .glass {
+      background: var(--panel);
+      color: var(--text);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .capture-btn {
+      width: 82px;
+      height: 82px;
+      padding: 0;
+      border: 6px solid rgba(255,255,255,0.65);
+      background: rgba(255,255,255,0.22);
+      position: relative;
+    }
+
+    .capture-btn::after {
+      content: "";
+      position: absolute;
+      inset: 10px;
+      border-radius: 999px;
+      background: #fff;
+    }
+
+    .action-row {
+      display: none;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .primary {
+      background: var(--accent);
+      color: #052e16;
+    }
+
+    .secondary {
+      background: rgba(255,255,255,0.92);
+      color: #111827;
+    }
+
+    .danger {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    .hidden-canvas {
+      display: none;
+    }
+
+    .hint {
+      background: var(--panel);
+      color: var(--muted);
+      text-align: center;
+      padding: 12px 14px;
+      border-radius: 18px;
+      font-size: 13px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    @media (max-width: 540px) {
+      .brand h1 { font-size: 16px; }
+      .brand p, .status { font-size: 12px; }
+      button { font-size: 14px; }
+      .capture-btn { width: 76px; height: 76px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <video id="video" autoplay playsinline muted></video>
+    <img id="capturedImage" class="captured-image" alt="Foto capturada" />
+    <img id="frameOverlay" class="frame-overlay" src="frame.png" alt="Marco" />
+
+    <div class="top-bar">
+      <div class="brand">
+        <h1>Foto con marco</h1>
+        <p>Abre la cámara, posa y guarda tu foto.</p>
+      </div>
+      <div id="status" class="status">Iniciando cámara...</div>
+    </div>
+
+    <div class="controls">
+      <div id="liveControls" class="button-row">
+        <button id="switchBtn" class="glass" type="button">Cambiar cámara</button>
+        <button id="captureBtn" class="capture-btn" type="button" aria-label="Tomar foto"></button>
+        <button id="fullscreenBtn" class="glass" type="button">Pantalla completa</button>
+      </div>
+
+      <div id="photoActions" class="action-row">
+        <button id="retakeBtn" class="danger" type="button">Tomar otra</button>
+        <button id="saveBtn" class="primary" type="button">Guardar foto</button>
+      </div>
+
+      <div class="hint">Tip: usa un PNG transparente como <strong>frame.png</strong> para que el marco quede encima de la foto.</div>
+    </div>
+
+    <canvas id="outputCanvas" class="hidden-canvas"></canvas>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const frameOverlay = document.getElementById('frameOverlay');
+    const capturedImage = document.getElementById('capturedImage');
+    const outputCanvas = document.getElementById('outputCanvas');
+    const statusEl = document.getElementById('status');
+
+    const switchBtn = document.getElementById('switchBtn');
+    const captureBtn = document.getElementById('captureBtn');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const retakeBtn = document.getElementById('retakeBtn');
+    const saveBtn = document.getElementById('saveBtn');
+
+    const liveControls = document.getElementById('liveControls');
+    const photoActions = document.getElementById('photoActions');
+
+    let stream = null;
+    let facingMode = 'user';
+    let currentPhotoDataUrl = '';
+
+    function setStatus(message) {
+      statusEl.textContent = message;
+    }
+
+    async function startCamera() {
+      try {
+        stopCamera();
+        setStatus('Solicitando permiso de cámara...');
+
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: facingMode }
+          },
+          audio: false
+        });
+
+        video.srcObject = stream;
+        await video.play();
+        setStatus(facingMode === 'user' ? 'Cámara frontal activa' : 'Cámara trasera activa');
+      } catch (error) {
+        console.error(error);
+        if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+          setStatus('La cámara requiere HTTPS. Súbelo a GitHub Pages.');
+        } else {
+          setStatus('No se pudo abrir la cámara. Revisa permisos del navegador.');
+        }
+      }
+    }
+
+    function stopCamera() {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+      }
+    }
+
+    function drawCoverImage(ctx, source, srcW, srcH, destW, destH) {
+      const srcRatio = srcW / srcH;
+      const destRatio = destW / destH;
+
+      let drawW;
+      let drawH;
+      let offsetX;
+      let offsetY;
+
+      if (srcRatio > destRatio) {
+        drawH = destH;
+        drawW = destH * srcRatio;
+        offsetX = (destW - drawW) / 2;
+        offsetY = 0;
+      } else {
+        drawW = destW;
+        drawH = destW / srcRatio;
+        offsetX = 0;
+        offsetY = (destH - drawH) / 2;
+      }
+
+      ctx.drawImage(source, offsetX, offsetY, drawW, drawH);
+    }
+
+    function capturePhoto() {
+      if (!video.videoWidth || !video.videoHeight) {
+        setStatus('La cámara aún no está lista.');
+        return;
+      }
+
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+
+      outputCanvas.width = width;
+      outputCanvas.height = height;
+
+      const ctx = outputCanvas.getContext('2d');
+      ctx.clearRect(0, 0, width, height);
+
+      if (facingMode === 'user') {
+        ctx.save();
+        ctx.translate(width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, 0, 0, width, height);
+        ctx.restore();
+      } else {
+        ctx.drawImage(video, 0, 0, width, height);
+      }
+
+      if (frameOverlay.complete && frameOverlay.naturalWidth > 0) {
+        drawCoverImage(ctx, frameOverlay, frameOverlay.naturalWidth, frameOverlay.naturalHeight, width, height);
+      }
+
+      currentPhotoDataUrl = outputCanvas.toDataURL('image/png');
+      capturedImage.src = currentPhotoDataUrl;
+      capturedImage.style.display = 'block';
+      video.style.display = 'none';
+      frameOverlay.style.display = 'none';
+      liveControls.style.display = 'none';
+      photoActions.style.display = 'grid';
+      setStatus('Foto tomada');
+    }
+
+    function retakePhoto() {
+      currentPhotoDataUrl = '';
+      capturedImage.src = '';
+      capturedImage.style.display = 'none';
+      video.style.display = 'block';
+      frameOverlay.style.display = 'block';
+      liveControls.style.display = 'grid';
+      photoActions.style.display = 'none';
+      setStatus(facingMode === 'user' ? 'Cámara frontal activa' : 'Cámara trasera activa');
+    }
+
+    function savePhoto() {
+      if (!currentPhotoDataUrl) return;
+
+      const link = document.createElement('a');
+      const fileName = `foto-con-marco-${Date.now()}.png`;
+      link.href = currentPhotoDataUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setStatus('Foto guardada');
+    }
+
+    async function switchCamera() {
+      facingMode = facingMode === 'user' ? 'environment' : 'user';
+      await startCamera();
+    }
+
+    async function goFullscreen() {
+      const root = document.documentElement;
+      try {
+        if (!document.fullscreenElement && root.requestFullscreen) {
+          await root.requestFullscreen();
+        }
+      } catch (error) {
+        console.warn('No se pudo activar pantalla completa', error);
+      }
+    }
+
+    captureBtn.addEventListener('click', capturePhoto);
+    switchBtn.addEventListener('click', switchCamera);
+    retakeBtn.addEventListener('click', retakePhoto);
+    saveBtn.addEventListener('click', savePhoto);
+    fullscreenBtn.addEventListener('click', goFullscreen);
+
+    frameOverlay.addEventListener('error', () => {
+      setStatus('No encontré frame.png. Súbelo junto al index.html');
+    });
+
+    window.addEventListener('beforeunload', stopCamera);
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus('Tu navegador no soporta cámara web moderna.');
+    } else {
+      startCamera();
+    }
+  </script>
+</body>
+</html>
